@@ -1,16 +1,23 @@
 import {
   Bike, Cable, Car, Fuel, LayoutDashboard, Palette,
-  Save, SlidersHorizontal, Trash2, UserRound
+  Save, SlidersHorizontal, Trash2, UserRound, Pencil, Check, X
 } from 'lucide-react';
 import { FormEvent, useEffect, useRef, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import {
-  createMyVehicle, deleteMyVehicle, fetchMyVehicles, fetchVehicleCatalogs,
-  isAdminUser, getCurrentUser,
+  createMyVehicle,
+  deleteMyVehicle,
+  fetchMyVehicles,
+  fetchVehicleCatalogs,
+  updateMyVehicle,
+  isAdminUser,
+  getCurrentUser,
   type UserVehicle,
   type VehicleCatalogs,
 } from '../services/api';
+
+
 
 const iconMap = {
   car: Car,
@@ -35,6 +42,8 @@ export function VehicleSetupPage() {
   const [form, setForm] = useState({ idMarca: '', idmodelo: '', color: '', alias: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [editingAliasId, setEditingAliasId] = useState<number | null>(null);
+  const [editingAliasValue, setEditingAliasValue] = useState('');
 
   const handleLogout = () => {
     localStorage.removeItem('mapscar_token');
@@ -116,35 +125,39 @@ export function VehicleSetupPage() {
     { label: 'Alias', value: form.alias || 'Sin alias' },
   ];
 
-  const handleSelectSavedVehicle = async (vehicle: UserVehicle) => {
-    setSelectedVehicleId(vehicle.idvehiculo);
-    setError('');
+ const handleSelectSavedVehicle = async (vehicle: UserVehicle) => {
+  setSelectedVehicleId(vehicle.idvehiculo);
+  setError('');
 
-    const brandId = vehicle.marca?.id ? String(vehicle.marca.id) : '';
-    const modelId = vehicle.modelo?.id ? String(vehicle.modelo.id) : '';
+  const brandId = vehicle.marca?.id ? String(vehicle.marca.id) : '';
+  const modelId = vehicle.modelo?.id ? String(vehicle.modelo.id) : '';
 
-    setForm({
-      idMarca: brandId,
-      idmodelo: modelId,
-      color: vehicle.color || '',
-      alias: vehicle.alias || '',
-    });
+  setForm({
+    idMarca: brandId,
+    idmodelo: modelId,
+    color: vehicle.color || '',
+    alias: vehicle.alias || '',
+  });
 
-    if (vehicle.tipo?.id) {
-      setSelectedType(vehicle.tipo.id);
+  if (vehicle.tipo?.id) {
+    setSelectedType(vehicle.tipo.id);
+  }
+
+  if (brandId) {
+    try {
+      const catalogData = await fetchVehicleCatalogs(brandId);
+      setCatalogs((current) => ({ ...current, modelos: catalogData.modelos }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudieron cargar los modelos');
     }
+  }
 
-    if (brandId) {
-      try {
-        const catalogData = await fetchVehicleCatalogs(brandId);
-        setCatalogs((current) => ({ ...current, modelos: catalogData.modelos }));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'No se pudieron cargar los modelos');
-      }
-    }
+  localStorage.setItem('mapscar_vehicle', JSON.stringify(vehicle));
 
-    localStorage.setItem('mapscar_vehicle', JSON.stringify(vehicle));
-  };
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('vehicleChanged'));
+  }
+};
 
   const handleDeleteVehicle = async (vehicle: UserVehicle) => {
     const title =
@@ -204,10 +217,73 @@ export function VehicleSetupPage() {
     }
   };
 
+  const handleStartAliasEdit = (vehicle: UserVehicle) => {
+    setEditingAliasId(vehicle.idvehiculo);
+    setEditingAliasValue(vehicle.alias || '');
+  };
+
+  const handleCancelAliasEdit = () => {
+    setEditingAliasId(null);
+    setEditingAliasValue('');
+  };
+
+  const handleSaveAliasEdit = async (vehicleId: number) => {
+  const newAlias = editingAliasValue.trim();
+
+  try {
+    const response = await updateMyVehicle(vehicleId, { alias: newAlias });
+
+    const updatedVehicle = response?.vehicle;
+
+    if (updatedVehicle) {
+      setVehicles((prev) =>
+        prev.map((vehicle) =>
+          vehicle.idvehiculo === vehicleId ? updatedVehicle : vehicle
+        )
+      );
+
+      if (selectedVehicleId === vehicleId) {
+        localStorage.setItem('mapscar_vehicle', JSON.stringify(updatedVehicle));
+      }
+    } else {
+      const refreshed = await fetchMyVehicles().catch(() => []);
+      setVehicles(refreshed);
+
+      if (selectedVehicleId === vehicleId) {
+        const selected = refreshed.find((v) => v.idvehiculo === vehicleId);
+        if (selected) {
+          localStorage.setItem('mapscar_vehicle', JSON.stringify(selected));
+        }
+      }
+    }
+
+    setEditingAliasId(null);
+    setEditingAliasValue('');
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'No se pudo actualizar el alias');
+  }
+};
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
     if (!selectedType) {
       setError('Selecciona un tipo de vehículo');
+      return;
+    }
+
+    const duplicateVehicle = vehicles.find((vehicle) => {
+      const sameBrand = String(vehicle.marca?.id || '') === form.idMarca;
+      const sameModel = String(vehicle.modelo?.id || '') === form.idmodelo;
+      const sameAlias =
+        (vehicle.alias || '').trim().toLowerCase() ===
+        form.alias.trim().toLowerCase();
+
+      return sameBrand && sameModel && sameAlias;
+    });
+
+    if (duplicateVehicle) {
+      setError('Ya tienes registrado un vehículo con la misma marca, modelo y alias.');
       return;
     }
 
@@ -224,6 +300,10 @@ export function VehicleSetupPage() {
       });
 
       localStorage.setItem('mapscar_vehicle', JSON.stringify(response.vehicle));
+
+      if (typeof window !== 'undefined') {
+  window.dispatchEvent(new Event('vehicleChanged'));
+}
 
       const vehicleData = await fetchMyVehicles().catch(() => []);
       setVehicles(vehicleData);
@@ -487,23 +567,75 @@ export function VehicleSetupPage() {
                           key={item.idvehiculo}
                           className={`vehicle-saved-card ${selectedVehicleId === item.idvehiculo ? 'active' : ''}`}
                         >
-                          <button
-                            type="button"
+                          <div
                             className="vehicle-saved-card-main"
-                            onClick={() => handleSelectSavedVehicle(item)}
+                            onClick={() => {
+                              if (editingAliasId !== item.idvehiculo) {
+                                handleSelectSavedVehicle(item);
+                              }
+                            }}
                           >
-                            <strong>{title}</strong>
-                            <span>{subtitle || 'Sin detalles'}</span>
-                          </button>
+                            {editingAliasId === item.idvehiculo ? (
+                              <div className="vehicle-alias-edit-wrap">
+                                <input
+                                  className="vehicle-alias-edit-input"
+                                  value={editingAliasValue}
+                                  onChange={(e) => setEditingAliasValue(e.target.value)}
+                                  placeholder="Alias"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                            ) : (
+                              <>
+                                <strong>{title}</strong>
+                                <span>{subtitle || 'Sin detalles'}</span>
+                              </>
+                            )}
+                          </div>
 
-                          <button
-                            type="button"
-                            className="vehicle-saved-delete"
-                            onClick={() => handleDeleteVehicle(item)}
-                            title="Eliminar vehículo"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div className="vehicle-saved-side-actions">
+                            {editingAliasId === item.idvehiculo ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="vehicle-alias-save"
+                                  onClick={() => handleSaveAliasEdit(item.idvehiculo)}
+                                  title="Guardar alias"
+                                >
+                                  <Check size={14} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="vehicle-alias-cancel"
+                                  onClick={handleCancelAliasEdit}
+                                  title="Cancelar"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="vehicle-saved-edit"
+                                  onClick={() => handleStartAliasEdit(item)}
+                                  title="Editar alias"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="vehicle-saved-delete"
+                                  onClick={() => handleDeleteVehicle(item)}
+                                  title="Eliminar vehículo"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       );
                     })}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
-import { MessageSquare, Trash2, Users } from 'lucide-react';
+import { ChevronDown, MessageSquare, Trash2, Users } from 'lucide-react';
 import {
   deleteReview,
   deleteUser,
@@ -14,6 +14,8 @@ export function AdminReviewsPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [openUsers, setOpenUsers] = useState(false);
+  const [openReviews, setOpenReviews] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -29,7 +31,9 @@ export function AdminReviewsPanel() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const handleDelete = async (id: number) => {
     const result = await Swal.fire({
@@ -88,6 +92,7 @@ export function AdminReviewsPanel() {
       });
       return;
     }
+
     const result = await Swal.fire({
       title: '¿Eliminar usuario?',
       text: `Se eliminará a ${user.Username}. Esta acción no se puede deshacer.`,
@@ -134,60 +139,104 @@ export function AdminReviewsPanel() {
   return (
     <section className="admin-reviews-grid">
       <article className="admin-reviews-card">
-        <div className="admin-panel-header-row compact">
+        <div
+          className="admin-panel-header-row compact admin-collapsible-header"
+          onClick={() => setOpenUsers((prev) => !prev)}
+        >
           <div>
             <h3>Usuarios registrados</h3>
           </div>
-          <span className="feature-chip"><Users size={14} /> {users.length} usuarios</span>
-        </div>
-        {loading ? <div className="admin-empty-state">Cargando usuarios...</div> : error ? <div className="error-box">{error}</div> : (
-          <div className="admin-table-list">
-            {users.map((user) => (
-              <div key={user.IDusuario} className="admin-table-row">
-                <div>
-                  <strong>{user.Username}</strong>
-                  <span>{user.Correo}</span>
-                </div>
 
-                <div className="admin-row-actions">
-                  <span className="muted-pill">{user.RolNombre}</span>
-                  <button
-                    className="ghost-icon danger"
-                    type="button"
-                    onClick={() => handleDeleteUser(user)}
-                    title="Eliminar usuario"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="admin-collapsible-actions">
+            <span className="feature-chip">
+              <Users size={14} /> {users.length} usuarios
+            </span>
+            <span className={`admin-collapse-icon ${openUsers ? 'open' : ''}`}>
+              <ChevronDown size={18} />
+            </span>
           </div>
+        </div>
+
+        {openUsers && (
+          loading ? (
+            <div className="admin-empty-state">Cargando usuarios...</div>
+          ) : error ? (
+            <div className="error-box">{error}</div>
+          ) : (
+            <div className="admin-table-list">
+              {users.map((user) => (
+                <div key={user.IDusuario} className="admin-table-row">
+                  <div>
+                    <strong>{user.Username}</strong>
+                    <span>{user.Correo}</span>
+                  </div>
+
+                  <div className="admin-row-actions">
+                    <span className="muted-pill">{user.RolNombre}</span>
+                    <button
+                      className="ghost-icon danger"
+                      type="button"
+                      onClick={() => handleDeleteUser(user)}
+                      title="Eliminar usuario"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </article>
 
       <article className="admin-reviews-card">
-        <div className="admin-panel-header-row compact">
+        <div
+          className="admin-panel-header-row compact admin-collapsible-header"
+          onClick={() => setOpenReviews((prev) => !prev)}
+        >
           <div>
             <h3>Reseñas y puntuaciones</h3>
           </div>
-          <span className="feature-chip"><MessageSquare size={14} /> {reviews.length} reseñas</span>
-        </div>
-        {loading ? <div className="admin-empty-state">Cargando reseñas...</div> : error ? <div className="error-box">{error}</div> : (
-          <div className="admin-table-list reviews">
-            {reviews.map((review) => (
-              <div key={review.id} className="admin-review-item">
-                <div>
-                  <strong>{review.gasolinera?.nombre || 'Gasolinera eliminada'}</strong>
-                  <span>{review.usuario?.username || 'Usuario desconocido'} · {review.puntuacion} estrellas</span>
-                  <p>{review.comentario || 'Sin comentario'}</p>
-                </div>
-                <button className="ghost-icon danger" type="button" onClick={() => handleDelete(review.id)} title="Eliminar reseña">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
+
+          <div className="admin-collapsible-actions">
+            <span className="feature-chip">
+              <MessageSquare size={14} /> {reviews.length} reseñas
+            </span>
+            <span className={`admin-collapse-icon ${openReviews ? 'open' : ''}`}>
+              <ChevronDown size={18} />
+            </span>
           </div>
+        </div>
+
+        {openReviews && (
+          loading ? (
+            <div className="admin-empty-state">Cargando reseñas...</div>
+          ) : error ? (
+            <div className="error-box">{error}</div>
+          ) : (
+            <div className="admin-table-list reviews">
+              {reviews.map((review) => (
+                <div key={review.id} className="admin-review-item">
+                  <div>
+                    <strong>{review.gasolinera?.nombre || 'Gasolinera eliminada'}</strong>
+                    <span>
+                      {review.usuario?.username || 'Usuario desconocido'} · {review.puntuacion} estrellas
+                    </span>
+                    <p>{review.comentario || 'Sin comentario'}</p>
+                  </div>
+
+                  <button
+                    className="ghost-icon danger"
+                    type="button"
+                    onClick={() => handleDelete(review.id)}
+                    title="Eliminar reseña"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </article>
     </section>

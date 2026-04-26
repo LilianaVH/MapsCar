@@ -1,7 +1,6 @@
 import { FormEvent, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Turnstile } from '@marsidev/react-turnstile';
-import { CenteredAuthLayout } from '../components/Layout';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Fuel, Eye, EyeOff } from 'lucide-react';
 import { loginUser } from '../services/api';
 
 export function LoginPage() {
@@ -9,8 +8,7 @@ export function LoginPage() {
   const location = useLocation();
 
   const [form, setForm] = useState({ access: '', contrasena: '' });
-  const [turnstileToken, setTurnstileToken] = useState('');
-  const [turnstileKey, setTurnstileKey] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,19 +16,9 @@ export function LoginPage() {
     ? 'Cuenta creada correctamente, ahora inicia sesión.'
     : '';
 
-  const resetTurnstile = () => {
-    setTurnstileToken('');
-    setTurnstileKey((prev) => prev + 1);
-  };
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-
-    if (!turnstileToken) {
-      setError('Completa la verificación de seguridad.');
-      return;
-    }
 
     setLoading(true);
     try {
@@ -38,7 +26,6 @@ export function LoginPage() {
         Username: form.access,
         Correo: form.access,
         Contrasena: form.contrasena,
-        turnstileToken,
       });
 
       localStorage.setItem('mapscar_token', response?.token || '');
@@ -49,59 +36,90 @@ export function LoginPage() {
       } else {
         navigate('/dashboard');
       }
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión');
-      resetTurnstile();
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <CenteredAuthLayout title="Inicia sesión" subtitle="Accede a tu cuenta.">
-      <form className="form-grid" onSubmit={handleSubmit}>
-        <label>
-          <span>Usuario o correo</span>
-          <input
-            className="input"
-            value={form.access}
-            onChange={(e) => setForm({ ...form, access: e.target.value })}
-            required
-          />
-        </label>
+    <div className="login-clean-page">
+      <div className="login-clean-card">
+        <div className="login-clean-brand">
+          <div className="login-clean-logo">
+            <Fuel size={40} strokeWidth={2.2} />
+          </div>
 
-        <label>
-          <span>Contraseña</span>
-          <input
-            className="input"
-            type="password"
-            value={form.contrasena}
-            onChange={(e) => setForm({ ...form, contrasena: e.target.value })}
-            required
-          />
-        </label>
-
-        {successMessage && (
-          <div className="success-box">{successMessage}</div>
-        )}
-
-        <div className="turnstile-wrap">
-          <Turnstile
-            key={turnstileKey}
-            siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
-            onSuccess={(token) => setTurnstileToken(token)}
-            onExpire={() => resetTurnstile()}
-            onError={() => resetTurnstile()}
-          />
+          <div className="login-clean-brand-text">
+            <h1>MapsCar</h1>
+            <span>Colima</span>
+          </div>
         </div>
 
-        {error && <div className="error-box">{error}</div>}
+        <div className="login-clean-header">
+          <h2>Iniciar sesión</h2>
+          <p>Accede a tu cuenta</p>
+        </div>
 
-        <button className="primary-button" type="submit" disabled={loading || !turnstileToken}>
-          {loading ? 'Entrando...' : 'Iniciar sesión'}
-        </button>
-      </form>
-    </CenteredAuthLayout>
+        <form className="login-clean-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Usuario o correo</span>
+            <input
+              className="login-clean-input"
+              value={form.access}
+              onChange={(e) => setForm({ ...form, access: e.target.value })}
+              required
+            />
+          </label>
+
+          <label>
+            <span>Contraseña</span>
+
+            <div className="login-password-wrap">
+              <input
+                className="login-clean-input login-password-input"
+                type={showPassword ? 'text' : 'password'}
+                value={form.contrasena}
+                onChange={(e) => setForm({ ...form, contrasena: e.target.value })}
+                required
+              />
+
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+          </label>
+
+          {successMessage && (
+            <div className="success-box">{successMessage}</div>
+          )}
+
+          {error && (
+            <div className="error-box">{error}</div>
+          )}
+
+          <button
+            className="login-clean-button"
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? 'Entrando...' : 'Iniciar sesión'}
+          </button>
+        </form>
+
+        <div className="login-clean-footer">
+          <Link to="/register" className="login-clean-link">
+            Registrar
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }
+

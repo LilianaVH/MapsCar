@@ -16,7 +16,15 @@ import { useNavigate } from 'react-router-dom';
 import type { GasStation } from '../data/mock';
 import { RatingModal } from '../components/RatingModal';
 import { StationsMap } from '../components/StationsMap';
-import { fetchMyVehicles, fetchStations, getCurrentUser, getStoredVehicle, isAdminUser, type UserVehicle } from '../services/api';
+import {
+  fetchMyVehicles,
+  fetchStations,
+  getCurrentUser,
+  getStoredVehicle,
+  isAdminUser,
+  deleteComment,
+  type UserVehicle
+} from '../services/api';
 
 const filters = [
   { label: 'Cercanas', icon: Navigation },
@@ -105,7 +113,9 @@ export function DashboardPage() {
     try {
       const data = await fetchStations();
       setStations(data);
-      setSelectedStation((prev) => prev ? data.find((station) => station.id === prev.id) || null : null);
+      setSelectedStation((prev) =>
+        prev ? data.find((station) => station.id === prev.id) || null : null
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las gasolineras');
     } finally {
@@ -142,13 +152,16 @@ export function DashboardPage() {
     );
   };
 
-  const handleVehicleChange = (id: number) => {
+  const handleVehicleChange = async (id: number) => {
     setSelectedVehicleId(id);
 
     const vehicle = vehicles.find((item) => item.idvehiculo === id);
     if (vehicle) {
       localStorage.setItem('mapscar_vehicle', JSON.stringify(vehicle));
     }
+
+    setSelectedStation(null);
+    await loadStations();
   };
 
   const handleLogout = () => {
@@ -159,23 +172,64 @@ export function DashboardPage() {
     navigate('/login');
   };
 
-  useEffect(() => {
-    loadStations();
+  const handleDeleteComment = async (_stationId: number, commentId: number) => {
+    try {
+      await deleteComment(commentId);
+      await loadStations();
+    } catch (error) {
+      console.error('Error al borrar comentario:', error);
+    }
+  };
 
-    fetchMyVehicles()
-      .then((data) => {
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        const data = await fetchMyVehicles();
         setVehicles(data);
 
         const stored = getStoredVehicle();
-        if (stored?.idvehiculo) {
+
+        if (stored?.idvehiculo && data.some((item) => item.idvehiculo === stored.idvehiculo)) {
           setSelectedVehicleId(stored.idvehiculo);
         } else if (data[0]?.idvehiculo) {
           setSelectedVehicleId(data[0].idvehiculo);
           localStorage.setItem('mapscar_vehicle', JSON.stringify(data[0]));
+        } else {
+          localStorage.removeItem('mapscar_vehicle');
+          setSelectedVehicleId(0);
+          setStations([]);
         }
-      })
-      .catch(() => setVehicles([]));
+      } catch {
+        setVehicles([]);
+        setSelectedVehicleId(0);
+        localStorage.removeItem('mapscar_vehicle');
+        setStations([]);
+      }
+    };
+
+    loadDashboardData();
+
+    const handleVehicleChanged = async () => {
+      await loadDashboardData();
+    };
+
+    window.addEventListener('vehicleChanged', handleVehicleChanged);
+
+    return () => {
+      window.removeEventListener('vehicleChanged', handleVehicleChanged);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!selectedVehicleId) return;
+
+    const vehicle = vehicles.find((item) => item.idvehiculo === selectedVehicleId);
+    if (!vehicle) return;
+
+    localStorage.setItem('mapscar_vehicle', JSON.stringify(vehicle));
+    setSelectedStation(null);
+    loadStations();
+  }, [selectedVehicleId, vehicles]);
 
   useEffect(() => {
     if (selectedFilter === 'Cercanas' && !userCoords && !geoLoading) {
@@ -206,12 +260,20 @@ export function DashboardPage() {
   const filteredStations = useMemo(() => {
     const value = search.trim().toLowerCase();
 
-    let result = stations.filter(
-      (station) =>
+    let result = stations.filter((station) => {
+      const name = station.name ?? station.nombre ?? '';
+      const address = station.address ?? station.domicilio ?? '';
+      const municipio = station.municipio ?? '';
+      const estado = station.estado ?? '';
+
+      return (
         !value ||
-        station.name.toLowerCase().includes(value) ||
-        station.address.toLowerCase().includes(value),
-    );
+        name.toLowerCase().includes(value) ||
+        address.toLowerCase().includes(value) ||
+        municipio.toLowerCase().includes(value) ||
+        estado.toLowerCase().includes(value)
+      );
+    });
 
     if (selectedFilter === 'Cercanas' && userCoords) {
       result = [...result].sort((a, b) => {
@@ -230,24 +292,51 @@ export function DashboardPage() {
     }
 
     if (selectedFilter === 'Mejor rendimiento') {
-      result = [...result].sort(
-        (a, b) =>
-          parsePerformanceValue(b.estimatedPerformance) -
-          parsePerformanceValue(a.estimatedPerformance) ||
-          b.rating - a.rating,
-      );
+      result = [...result].sort((a, b) => {
+        const perfA = parsePerformanceValue(a.estimatedPerformance) || 0;
+        const perfB = parsePerformanceValue(b.estimatedPerformance) || 0;
+
+        if (perfB !== perfA) {
+          return perfB - perfA;
+        }
+
+        const ratingA = Number(a.rating) || 0;
+        const ratingB = Number(b.rating) || 0;
+
+        return ratingB - ratingA;
+      });
     }
 
     if (selectedFilter === 'Mejor calificación') {
-      result = [...result].sort(
-        (a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount,
-      );
+      result = [...result].sort((a, b) => {
+        const ratingA = Number(a.rating) || 0;
+        const ratingB = Number(b.rating) || 0;
+
+        if (ratingB !== ratingA) {
+          return ratingB - ratingA;
+        }
+
+        const reviewsA = Number(a.reviewCount) || 0;
+        const reviewsB = Number(b.reviewCount) || 0;
+
+        return reviewsB - reviewsA;
+      });
     }
 
     return result;
   }, [search, stations, selectedFilter, userCoords]);
 
-  const activeStation = filteredStations.find((station) => station.id === selectedStation?.id) ?? null;
+  const activeStation =
+    filteredStations.find((station) => station.id === selectedStation?.id) ?? null;
+
+  useEffect(() => {
+  if (filteredStations.length === 0) {
+    setSelectedStation(null);
+    return;
+  }
+
+  setSelectedStation(filteredStations[0]);
+}, [selectedFilter, userCoords]);
 
   const activeStationDistance =
     userCoords && activeStation?.lat != null && activeStation?.lng != null
@@ -266,7 +355,6 @@ export function DashboardPage() {
         </div>
 
         <nav className="dashboard-header-nav">
-      
           {isAdmin && (
             <button
               className="dashboard-nav-pill"
@@ -276,7 +364,7 @@ export function DashboardPage() {
               <Cable size={16} /> Administrador
             </button>
           )}
-          
+
           <button className="dashboard-nav-pill active" type="button">
             <LayoutDashboard size={16} /> Mapa
           </button>
@@ -288,7 +376,6 @@ export function DashboardPage() {
           >
             <SlidersHorizontal size={16} /> Agregar vehículo
           </button>
-
         </nav>
 
         <div className="dashboard-header-actions">
@@ -330,13 +417,28 @@ export function DashboardPage() {
 
               <div className="dashboard-searchbox">
                 <Search size={20} />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar gasolinera o dirección..." />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar gasolinera o dirección..."
+                />
               </div>
             </div>
 
             <div className="dashboard-filter-grid">
               {filters.map(({ label, icon: Icon }) => (
-                <button key={label} className={`dashboard-filter-card ${selectedFilter === label ? 'active' : ''}`} onClick={() => setSelectedFilter(label)} type="button">
+                <button
+                  key={label}
+                  className={`dashboard-filter-card ${selectedFilter === label ? 'active' : ''}`}
+                  onClick={() => {
+                    if (label === 'Cercanas') {
+                      requestUserLocation();
+                    }
+
+                    setSelectedFilter(label);
+                  }}
+                  type="button"
+                >
                   <span className="dashboard-filter-icon"><Icon size={18} /></span>
                   <span>
                     <strong>{label}</strong>
@@ -404,6 +506,7 @@ export function DashboardPage() {
                   </div>
                 </div>
               </div>
+
               <div className="dashboard-summary-card">
                 <TrendingUp size={18} />
                 <div>
@@ -434,6 +537,7 @@ export function DashboardPage() {
                 {!loading && !error && filteredStations.length === 0 && (
                   <div className="admin-empty-state">No hay gasolineras registradas.</div>
                 )}
+
                 {!loading && !error && filteredStations.map((station) => {
                   const distanceKm =
                     userCoords && station.lat != null && station.lng != null
@@ -477,51 +581,27 @@ export function DashboardPage() {
             <div className="dashboard-map-shell">
               <StationsMap
                 stations={filteredStations}
-                selectedStationId={activeStation?.id ?? 0}
-                onSelectStation={(station) =>
-                  setSelectedStation((prev) => (prev?.id === station.id ? null : station))
-                }
+                selectedStationId={selectedStation?.id ?? 0}
+                onSelectStation={setSelectedStation}
+                currentUserId={String(currentUser?.IDusuario ?? '')}
+                onDeleteComment={handleDeleteComment}
+                onRateStation={(station) => {
+                  setSelectedStation(station);
+                  setShowRating(true);
+                }}
               />
-
-              {activeStation && (
-                <div className="map-detail-card premium">
-                  <div className="map-detail-head">
-                    <div>
-                      <h3>{activeStation.name}</h3>
-                      <p>{activeStation.address}</p>
-                    </div>
-                    <button className="ghost-icon" type="button" title="Usuario">
-                      <UserRound size={18} />
-                    </button>
-                  </div>
-                  <div className="station-meta-row detail-meta-row">
-                    <span className="station-rating">
-                      <Star size={16} fill="currentColor" /> {activeStation.rating.toFixed(1)}
-                    </span>
-                    <span>{activeStation.reviewCount} reseñas</span>
-                    <span className="vehicle-chip">{vehicleAlias}</span>
-
-                    {selectedFilter === 'Cercanas' && activeStationDistance != null && (
-                      <span>A {activeStationDistance.toFixed(1)} km</span>
-                    )}
-                  </div>
-                  <p className="detail-performance">{activeStation.estimatedPerformance}</p>
-                  {activeStation.comments?.length ? (
-                    <ul className="comment-list compact">
-                      {activeStation.comments.map((comment) => <li key={comment}>{comment}</li>)}
-                    </ul>
-                  ) : null}
-                  <div className="detail-actions">
-                    <button className="primary-button" type="button" onClick={() => setShowRating(true)}>Puntuar</button>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
         </section>
       </main>
 
-      <RatingModal open={showRating && !!activeStation} onClose={() => setShowRating(false)} stationId={activeStation?.id || 0} stationName={activeStation?.name || 'Gasolinera'} onSaved={loadStations} />
+      <RatingModal
+        open={showRating && !!activeStation}
+        onClose={() => setShowRating(false)}
+        stationId={activeStation?.id || 0}
+        stationName={activeStation?.name || 'Gasolinera'}
+        onSaved={loadStations}
+      />
     </div>
   );
 }

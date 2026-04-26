@@ -16,6 +16,32 @@ function normalize(body = {}) {
   };
 }
 
+function formatUserVehicle(item) {
+  return {
+    idvehiculo: item.idvehiculo,
+    alias: item.alias,
+    color: item.color,
+    rendimientoEstimado:
+      item.vehiculo.rendimientoEstimado == null
+        ? null
+        : Number(item.vehiculo.rendimientoEstimado),
+    tipo: item.vehiculo.tipo
+      ? { id: item.vehiculo.tipo.idtipo, nombre: item.vehiculo.tipo.nombre }
+      : null,
+    marca: item.vehiculo.marca
+      ? { id: item.vehiculo.marca.idMarca, nombre: item.vehiculo.marca.nombre }
+      : null,
+    modelo: item.vehiculo.modelo
+      ? {
+          id: item.vehiculo.modelo.idmodelo,
+          idMarca: item.vehiculo.modelo.idMarca,
+          nombre: item.vehiculo.modelo.nombre,
+          anio: item.vehiculo.modelo.anio,
+        }
+      : null,
+  };
+}
+
 r.get('/mis-vehiculos', requireAuth, async (req, res) => {
   try {
     const items = await prisma.usuarioVehiculo.findMany({
@@ -32,17 +58,7 @@ r.get('/mis-vehiculos', requireAuth, async (req, res) => {
       orderBy: { alias: 'asc' },
     });
 
-    const data = items.map((item) => ({
-      idvehiculo: item.idvehiculo,
-      alias: item.alias,
-      color: item.color,
-      rendimientoEstimado: item.vehiculo.rendimientoEstimado == null ? null : Number(item.vehiculo.rendimientoEstimado),
-      tipo: item.vehiculo.tipo ? { id: item.vehiculo.tipo.idtipo, nombre: item.vehiculo.tipo.nombre } : null,
-      marca: item.vehiculo.marca ? { id: item.vehiculo.marca.idMarca, nombre: item.vehiculo.marca.nombre } : null,
-      modelo: item.vehiculo.modelo ? { id: item.vehiculo.modelo.idmodelo, idMarca: item.vehiculo.modelo.idMarca, nombre: item.vehiculo.modelo.nombre, anio: item.vehiculo.modelo.anio } : null,
-    }));
-
-    return ok(res, data);
+    return ok(res, items.map(formatUserVehicle));
   } catch (error) {
     return fail(res, error, 500);
   }
@@ -55,7 +71,10 @@ r.post('/mis-vehiculos', requireAuth, async (req, res) => {
     if (!data.idMarca) return fail(res, 'Debes seleccionar una marca');
     if (!data.idmodelo) return fail(res, 'Debes seleccionar un modelo');
 
-    const modelo = await prisma.modeloVehiculo.findUnique({ where: { idmodelo: Number(data.idmodelo) } });
+    const modelo = await prisma.modeloVehiculo.findUnique({
+      where: { idmodelo: Number(data.idmodelo) }
+    });
+
     if (!modelo) return fail(res, 'El modelo seleccionado no existe');
     if (Number(modelo.idMarca) !== Number(data.idMarca)) {
       return fail(res, 'El modelo seleccionado no pertenece a la marca elegida');
@@ -66,7 +85,10 @@ r.post('/mis-vehiculos', requireAuth, async (req, res) => {
         idtipo: Number(data.idtipo),
         idMarca: Number(data.idMarca),
         idmodelo: Number(data.idmodelo),
-        rendimientoEstimado: data.rendimientoEstimado == null || data.rendimientoEstimado === '' ? null : String(data.rendimientoEstimado),
+        rendimientoEstimado:
+          data.rendimientoEstimado == null || data.rendimientoEstimado === ''
+            ? null
+            : String(data.rendimientoEstimado),
       },
     });
 
@@ -99,16 +121,109 @@ r.post('/mis-vehiculos', requireAuth, async (req, res) => {
 
     return ok(res, {
       message: 'Vehículo guardado correctamente',
-      vehicle: {
-        idvehiculo: vehicle.idvehiculo,
-        alias: vehicle.alias,
-        color: vehicle.color,
-        rendimientoEstimado: vehicle.vehiculo.rendimientoEstimado == null ? null : Number(vehicle.vehiculo.rendimientoEstimado),
-        tipo: vehicle.vehiculo.tipo ? { id: vehicle.vehiculo.tipo.idtipo, nombre: vehicle.vehiculo.tipo.nombre } : null,
-        marca: vehicle.vehiculo.marca ? { id: vehicle.vehiculo.marca.idMarca, nombre: vehicle.vehiculo.marca.nombre } : null,
-        modelo: vehicle.vehiculo.modelo ? { id: vehicle.vehiculo.modelo.idmodelo, idMarca: vehicle.vehiculo.modelo.idMarca, nombre: vehicle.vehiculo.modelo.nombre, anio: vehicle.vehiculo.modelo.anio } : null,
-      },
+      vehicle: formatUserVehicle(vehicle),
     }, 201);
+  } catch (error) {
+    return fail(res, error, 500);
+  }
+});
+
+r.put('/mis-vehiculos/:idvehiculo', requireAuth, async (req, res) => {
+  try {
+    const idvehiculo = Number(req.params.idvehiculo);
+
+    if (!idvehiculo) {
+      return fail(res, 'ID de vehículo inválido', 400);
+    }
+
+    const relation = await prisma.usuarioVehiculo.findUnique({
+      where: {
+        idusuario_idvehiculo: {
+          idusuario: req.user.IDusuario,
+          idvehiculo,
+        },
+      },
+      include: {
+        vehiculo: {
+          include: {
+            tipo: true,
+            marca: true,
+            modelo: true,
+          },
+        },
+      },
+    });
+
+    if (!relation) {
+      return fail(res, 'Vehículo no encontrado', 404);
+    }
+
+    const data = normalize(req.body);
+
+    if (data.idmodelo || data.idMarca) {
+      const nextModelId = data.idmodelo ? Number(data.idmodelo) : relation.vehiculo.idmodelo;
+      const nextBrandId = data.idMarca ? Number(data.idMarca) : relation.vehiculo.idMarca;
+
+      const modelo = await prisma.modeloVehiculo.findUnique({
+        where: { idmodelo: Number(nextModelId) },
+      });
+
+      if (!modelo) return fail(res, 'El modelo seleccionado no existe');
+      if (Number(modelo.idMarca) !== Number(nextBrandId)) {
+        return fail(res, 'El modelo seleccionado no pertenece a la marca elegida');
+      }
+    }
+
+    await prisma.vehiculo.update({
+      where: { idvehiculo },
+      data: {
+        ...(data.idtipo !== undefined && { idtipo: Number(data.idtipo) }),
+        ...(data.idMarca !== undefined && { idMarca: Number(data.idMarca) }),
+        ...(data.idmodelo !== undefined && { idmodelo: Number(data.idmodelo) }),
+        ...(data.rendimientoEstimado !== undefined && {
+          rendimientoEstimado:
+            data.rendimientoEstimado == null || data.rendimientoEstimado === ''
+              ? null
+              : String(data.rendimientoEstimado),
+        }),
+      },
+    });
+
+    await prisma.usuarioVehiculo.update({
+      where: {
+        idusuario_idvehiculo: {
+          idusuario: req.user.IDusuario,
+          idvehiculo,
+        },
+      },
+      data: {
+        ...(data.color !== undefined && { color: data.color }),
+        ...(data.alias !== undefined && { alias: data.alias }),
+      },
+    });
+
+    const updated = await prisma.usuarioVehiculo.findUnique({
+      where: {
+        idusuario_idvehiculo: {
+          idusuario: req.user.IDusuario,
+          idvehiculo,
+        },
+      },
+      include: {
+        vehiculo: {
+          include: {
+            tipo: true,
+            marca: true,
+            modelo: true,
+          },
+        },
+      },
+    });
+
+    return ok(res, {
+      message: 'Vehículo actualizado correctamente',
+      vehicle: formatUserVehicle(updated),
+    });
   } catch (error) {
     return fail(res, error, 500);
   }
