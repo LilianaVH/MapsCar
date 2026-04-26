@@ -1,4 +1,6 @@
-import type { GasStation } from '../data/mock';
+import type { GasStation as MockGasStation, StationComment } from '../data/mock';
+export type GasStation = MockGasStation;
+export type { StationComment };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -55,7 +57,6 @@ export type UserVehicle = {
   modelo: { id: number; idMarca?: number; nombre: string; anio: number } | null;
 };
 
-
 export type BrandAdminItem = {
   id: number;
   nombre: string;
@@ -93,7 +94,7 @@ export type RatingPayload = {
 async function handleResponse(response: Response) {
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data?.error || data?.message || 'Ocurrió un error en la solicitud');
+    throw new Error(data?.error || data?.message || 'OcurriÃ³ un error en la solicitud');
   }
   return data?.data ?? data;
 }
@@ -143,7 +144,24 @@ export async function loginUser(payload: LoginPayload) {
 }
 
 export async function fetchStations(): Promise<GasStation[]> {
-  const response = await fetch(`${API_BASE_URL}/api/gasolineras`);
+  const vehicle = getStoredVehicle();
+
+  let url = `${API_BASE_URL}/api/gasolineras`;
+
+if (vehicle?.tipo?.id && vehicle?.marca?.id && vehicle?.modelo?.id) {
+  const params = new URLSearchParams({
+    idTipo: String(vehicle.tipo.id),
+    idMarca: String(vehicle.marca.id),
+    idModelo: String(vehicle.modelo.id),
+  });
+  
+    url += `?${params.toString()}`;
+  }
+
+const response = await fetch(url, {
+    headers: authHeaders(),
+  });
+
   return handleResponse(response);
 }
 
@@ -227,6 +245,28 @@ export async function deleteMyVehicle(idvehiculo: number) {
   const response = await fetch(`${API_BASE_URL}/api/vehiculos/mis-vehiculos/${idvehiculo}`, {
     method: 'DELETE',
     headers: authHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function updateMyVehicle(
+  idvehiculo: number,
+  payload: {
+    idtipo?: number;
+    idMarca?: number;
+    idmodelo?: number;
+    color?: string;
+    alias?: string;
+    rendimientoEstimado?: number | string | null;
+  }
+) {
+  const response = await fetch(`${API_BASE_URL}/api/vehiculos/mis-vehiculos/${idvehiculo}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
   });
   return handleResponse(response);
 }
@@ -320,5 +360,14 @@ export async function updateAdminModel(id: number, payload: { idMarca: number; n
 
 export async function deleteAdminModel(id: number) {
   const response = await fetch(`${API_BASE_URL}/api/admin/catalogos/modelos/${id}`, { method: 'DELETE', headers: authHeaders() });
+  return handleResponse(response);
+}
+
+export async function deleteComment(commentId: number) {
+  const response = await fetch(`${API_BASE_URL}/api/puntuaciones/${commentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
   return handleResponse(response);
 }

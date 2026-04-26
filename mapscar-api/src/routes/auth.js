@@ -15,13 +15,13 @@ r.post("/login", async (req, res) => {
 
     if (!loginValue) return fail(res, "Debes proporcionar username o correo");
     if (!password) return fail(res, "La contraseña es obligatoria");
-    if (!turnstileToken) return fail(res, "Completa la verificación de seguridad");
+    //if (!turnstileToken) return fail(res, "Completa la verificación de seguridad");
 
-    const verification = await verifyTurnstileToken(turnstileToken, req.ip);
+    //const verification = await verifyTurnstileToken(turnstileToken, req.ip);
 
-    if (!verification.success) {
-      return fail(res, "No se pudo validar la verificación de seguridad", 400);
-    }
+    //if (!verification.success) {
+    //  return fail(res, "No se pudo validar la verificación de seguridad", 400);
+    //}
 
     const user = await prisma.usuario.findFirst({
       where: {

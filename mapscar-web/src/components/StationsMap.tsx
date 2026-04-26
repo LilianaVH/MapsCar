@@ -1,39 +1,42 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CircleHelp, LocateFixed, Navigation } from 'lucide-react';
 import {
-    MapContainer,
-    Marker,
-    Popup,
-    TileLayer,
-    useMap,
+  MapContainer,
+  Marker,
+  TileLayer,
+  useMap,
 } from 'react-leaflet';
+import { GasStationDetail } from '../components/GasStationDetail';
 import L, { LatLngBoundsExpression } from 'leaflet';
 import type { GasStation } from '../data/mock';
 
 type Props = {
-    stations: GasStation[];
-    selectedStationId: number;
-    onSelectStation: (station: GasStation) => void;
+  stations: GasStation[];
+  selectedStationId: number;
+  onSelectStation: (station: GasStation | null) => void;
+  currentUserId: string;
+  onDeleteComment: (stationId: number, commentId: number) => void;
+  onRateStation: (station: GasStation) => void;
 };
 
 const COLIMA_CENTER: [number, number] = [19.2433, -103.7241];
 
 const COLIMA_BOUNDS: LatLngBoundsExpression = [
-    [19.145, -103.815], // suroeste
-    [19.345, -103.615], // noreste
+  [19.145, -103.815],
+  [19.345, -103.615],
 ];
 
 const userLocationIcon = L.divIcon({
-    className: 'user-location-marker',
-    html: '<div class="user-location-dot"></div>',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+  className: 'user-location-marker',
+  html: '<div class="user-location-dot"></div>',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 function createStationIcon(isSelected: boolean) {
-    return L.divIcon({
-        className: 'station-marker-wrapper',
-        html: `
+  return L.divIcon({
+    className: 'station-marker-wrapper',
+    html: `
       <div class="station-pin ${isSelected ? 'selected' : ''}">
         <svg xmlns="http://www.w3.org/2000/svg" width="42" height="56" viewBox="0 0 42 56" fill="none">
           <path
@@ -58,170 +61,266 @@ function createStationIcon(isSelected: boolean) {
         </svg>
       </div>
     `,
-        iconSize: [42, 56],
-        iconAnchor: [21, 54],
-        popupAnchor: [0, -46],
-    });
+    iconSize: [42, 56],
+    iconAnchor: [21, 54],
+  });
 }
 
 function MapController({
-    stations,
-    selectedStation,
-    locateRequest,
-    centerRequest,
-    onLocated,
+  selectedStation,
+  locateRequest,
+  centerRequest,
+  onLocated,
+  mapRef,
 }: {
-    stations: GasStation[];
-    selectedStation?: GasStation | null;
-    locateRequest: number;
-    centerRequest: number;
-    onLocated: (coords: [number, number] | null) => void;
+  selectedStation?: GasStation | null;
+  locateRequest: number;
+  centerRequest: number;
+  onLocated: (coords: [number, number] | null) => void;
+  mapRef: React.MutableRefObject<L.Map | null>;
 }) {
-    const map = useMap();
+  const map = useMap();
 
-    useEffect(() => {
-        map.fitBounds(COLIMA_BOUNDS, { padding: [40, 40] });
-    }, [map]);
+  useEffect(() => {
+    mapRef.current = map;
+    map.fitBounds(COLIMA_BOUNDS, { padding: [40, 40] });
+  }, [map, mapRef]);
 
-    useEffect(() => {
-        if (!selectedStation || selectedStation.lat == null || selectedStation.lng == null) return;
+  useEffect(() => {
+    if (!selectedStation || selectedStation.lat == null || selectedStation.lng == null) return;
 
-        map.flyTo(
-            [selectedStation.lat, selectedStation.lng],
-            Math.max(map.getZoom(), 15),
-            { duration: 0.8 },
-        );
-    }, [map, selectedStation]);
+    map.flyTo(
+      [selectedStation.lat, selectedStation.lng],
+      Math.max(map.getZoom(), 15),
+      { duration: 0.8 },
+    );
+  }, [map, selectedStation]);
 
-    useEffect(() => {
-        if (!locateRequest) return;
-        if (!navigator.geolocation) {
-            onLocated(null);
-            return;
-        }
+  useEffect(() => {
+    if (!locateRequest) return;
+    if (!navigator.geolocation) {
+      onLocated(null);
+      return;
+    }
 
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const coords: [number, number] = [
-                    position.coords.latitude,
-                    position.coords.longitude,
-                ];
-                map.flyTo(coords, 15, { duration: 0.8 });
-                onLocated(coords);
-            },
-            () => onLocated(null),
-            { enableHighAccuracy: true, timeout: 8000 },
-        );
-    }, [locateRequest, map, onLocated]);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords: [number, number] = [
+          position.coords.latitude,
+          position.coords.longitude,
+        ];
+        map.flyTo(coords, 15, { duration: 0.8 });
+        onLocated(coords);
+      },
+      () => onLocated(null),
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+  }, [locateRequest, map, onLocated]);
 
-    useEffect(() => {
-        if (!centerRequest) return;
-        map.fitBounds(COLIMA_BOUNDS, { padding: [40, 40] });
-    }, [centerRequest, map]);
+  useEffect(() => {
+    if (!centerRequest) return;
+    map.fitBounds(COLIMA_BOUNDS, { padding: [40, 40] });
+  }, [centerRequest, map]);
 
-    return null;
+  return null;
 }
 
-export function StationsMap({ stations, selectedStationId, onSelectStation }: Props) {
-    const [locateRequest, setLocateRequest] = useState(0);
-    const [centerRequest, setCenterRequest] = useState(0);
-    const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+export function StationsMap({
+  stations,
+  selectedStationId,
+  onSelectStation,
+  currentUserId,
+  onDeleteComment,
+  onRateStation,
+}: Props) {
+  const [locateRequest, setLocateRequest] = useState(0);
+  const [centerRequest, setCenterRequest] = useState(0);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [detailPosition, setDetailPosition] = useState<{ x: number; y: number } | null>(null);
 
-    const selectedStation = useMemo(
-        () => stations.find((station) => station.id === selectedStationId) ?? null,
-        [selectedStationId, stations],
-    );
+  const mapRef = useRef<L.Map | null>(null);
 
-    const validStations = stations.filter(
-        (station) => station.lat != null && station.lng != null,
-    );
+  const selectedStation = useMemo(
+    () => stations.find((station) => station.id === selectedStationId) ?? null,
+    [selectedStationId, stations],
+  );
 
-    return (
-        <div className="map-embed-shell">
-            <div className="map-city-badge">Colima, México</div>
+  const validStations = stations.filter(
+    (station) => station.lat != null && station.lng != null,
+  );
 
-            <MapContainer
-                center={COLIMA_CENTER}
-                zoom={13}
-                className="leaflet-map-canvas"
-                zoomControl={false}
-            >
-                <TileLayer
-                    attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                />
+  const updateDetailPosition = (station: GasStation | null) => {
+    if (!mapRef.current || !station || station.lat == null || station.lng == null) {
+      setDetailPosition(null);
+      return;
+    }
 
-                <MapController
-                    stations={validStations}
-                    selectedStation={selectedStation}
-                    locateRequest={locateRequest}
-                    centerRequest={centerRequest}
-                    onLocated={setUserLocation}
-                />
+    const point = mapRef.current.latLngToContainerPoint([station.lat, station.lng]);
 
-                {validStations.map((station) => {
-                    const isSelected = station.id === selectedStationId;
+    const cardWidth = 420;
+    const cardHeight = 520; // antes 340
+    const margin = 16;
+    const offset = 18;
 
-                    return (
-                        <Marker
-                            key={station.id}
-                            position={[station.lat as number, station.lng as number]}
-                            icon={createStationIcon(isSelected)}
-                            eventHandlers={{
-                                click: () => onSelectStation(station),
-                            }}
-                        >
-                            <Popup>
-                                <div className="leaflet-popup-card">
-                                    <strong>{station.name}</strong>
-                                    <span>{station.address}</span>
-                                    <span>{station.estimatedPerformance}</span>
-                                    <span>
-                                        {station.rating.toFixed(1)} ★ · {station.reviewCount} reseñas
-                                    </span>
-                                </div>
-                            </Popup>
-                        </Marker>
-                    );
-                })}
+    let x = point.x + offset;
+    let y = point.y - cardHeight / 2;
 
-                {userLocation && (
-                    <Marker position={userLocation} icon={userLocationIcon}>
-                        <Popup>Tu ubicación</Popup>
-                    </Marker>
-                )}
-            </MapContainer>
+    const mapWidth = mapRef.current.getSize().x;
+    const mapHeight = mapRef.current.getSize().y;
 
-            {validStations.length === 0 && (
-                <div className="map-empty-state">
-                    <strong>No hay gasolineras registradas</strong>
-                    <span>Agrega una desde administración para verla en el mapa.</span>
-                </div>
-            )}
+    // si no cabe a la derecha, pásala a la izquierda
+    if (x + cardWidth > mapWidth - margin) {
+      x = point.x - cardWidth - offset;
+    }
 
-            <div className="map-floating-actions">
-                <button
-                    className="map-fab"
-                    type="button"
-                    title="Centrar mapa"
-                    onClick={() => setCenterRequest((prev) => prev + 1)}
-                >
-                    <Navigation size={20} />
-                </button>
+    // límites horizontales
+    if (x < margin) {
+      x = margin;
+    }
 
-                <button
-                    className="map-fab"
-                    type="button"
-                    onClick={() => setLocateRequest((prev) => prev + 1)}
-                    title="Mi ubicación"
-                >
-                    <LocateFixed size={20} />
-                </button>
+    if (x + cardWidth > mapWidth - margin) {
+      x = mapWidth - cardWidth - margin;
+    }
 
-                <button className="map-fab map-fab-light" type="button" title="Ayuda">
-                    <CircleHelp size={22} />
-                </button>
-            </div>
+    // límites verticales
+    if (y < margin) {
+      y = margin;
+    }
+
+    if (y + cardHeight > mapHeight - margin) {
+      y = mapHeight - cardHeight - margin;
+    }
+
+    setDetailPosition({ x, y });
+  };
+
+  useEffect(() => {
+    updateDetailPosition(selectedStation);
+  }, [selectedStation]);
+
+  useEffect(() => {
+    if (!mapRef.current || !selectedStation) return;
+
+    const map = mapRef.current;
+    const handleReposition = () => updateDetailPosition(selectedStation);
+
+    map.on('move', handleReposition);
+    map.on('zoom', handleReposition);
+    map.on('resize', handleReposition);
+
+    return () => {
+      map.off('move', handleReposition);
+      map.off('zoom', handleReposition);
+      map.off('resize', handleReposition);
+    };
+  }, [selectedStation]);
+
+  const handleMarkerClick = (station: GasStation) => {
+    onSelectStation(station);
+    updateDetailPosition(station);
+  };
+
+  return (
+    <div className="map-embed-shell">
+      <div className="map-city-badge">Colima, México</div>
+
+      <MapContainer
+        center={COLIMA_CENTER}
+        zoom={13}
+        className="leaflet-map-canvas"
+        zoomControl={false}
+      >
+        <TileLayer
+          attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        />
+
+        <MapController
+          selectedStation={selectedStation}
+          locateRequest={locateRequest}
+          centerRequest={centerRequest}
+          onLocated={setUserLocation}
+          mapRef={mapRef}
+        />
+
+        {validStations.map((station) => {
+          const isSelected = station.id === selectedStationId;
+
+          return (
+            <Marker
+              key={station.id}
+              position={[station.lat as number, station.lng as number]}
+              icon={createStationIcon(isSelected)}
+              eventHandlers={{
+                click: () => handleMarkerClick(station),
+              }}
+            />
+          );
+        })}
+
+        {userLocation && (
+          <Marker position={userLocation} icon={userLocationIcon} />
+        )}
+      </MapContainer>
+
+      {validStations.length === 0 && (
+        <div className="map-empty-state">
+          <strong>No hay gasolineras registradas</strong>
+          <span>Agrega una desde administración para verla en el mapa.</span>
         </div>
-    );
+      )}
+
+      {/* Panel dinámico: se mueve según la gasolinera seleccionada */}
+      {selectedStation && detailPosition && (
+        <GasStationDetail
+          station={{
+            id: selectedStation.id,
+            name: selectedStation.name,
+            address: selectedStation.address,
+            location: `${selectedStation.reviewCount} reseñas`,
+            rating: selectedStation.rating,
+            comments: selectedStation.comments ?? [],
+            estimatedPerformance: selectedStation.estimatedPerformance,
+            image: selectedStation.image ?? '',
+          }}
+          currentUserId={currentUserId}
+          onRate={() => {
+            onRateStation(selectedStation);
+          }}
+          onDeleteComment={(commentId) => {
+            onDeleteComment(selectedStation.id, commentId);
+          }}
+          onClose={() => {
+            onSelectStation(null);
+            setDetailPosition(null);
+          }}
+          detailPosition={detailPosition}
+        />
+      )}
+
+      <div className="map-floating-actions">
+        <button
+          className="map-fab"
+          type="button"
+          title="Centrar mapa"
+          onClick={() => setCenterRequest((prev) => prev + 1)}
+        >
+          <Navigation size={20} />
+        </button>
+
+        <button
+          className="map-fab"
+          type="button"
+          onClick={() => setLocateRequest((prev) => prev + 1)}
+          title="Mi ubicación"
+        >
+          <LocateFixed size={20} />
+        </button>
+
+        <button className="map-fab map-fab-light" type="button" title="Ayuda">
+          <CircleHelp size={22} />
+        </button>
+      </div>
+    </div>
+  );
 }

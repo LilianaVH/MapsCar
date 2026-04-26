@@ -4,14 +4,41 @@ function toNumber(value) {
   return value == null ? null : Number(value);
 }
 
+function filterReviewsByVehicle(reviews = [], filters = {}) {
+  const { idTipo, idMarca, idModelo } = filters;
+
+  if (!idTipo || !idMarca || !idModelo) return reviews;
+
+  return reviews.filter((item) => {
+    const vehiculo = item.puntuacionVehiculos?.[0]?.vehiculo;
+    if (!vehiculo) return false;
+
+    const sameType = Number(vehiculo.idtipo) === Number(idTipo);
+    const sameBrand = Number(vehiculo.idMarca) === Number(idMarca);
+    const sameModel = Number(vehiculo.idmodelo) === Number(idModelo);
+
+    return sameType && sameBrand && sameModel;
+  });
+}
+
 function formatStation(baseStation, reviews = []) {
   const valid = reviews.filter((item) => typeof item.puntuacion === "number");
-  const average = valid.length ? valid.reduce((acc, item) => acc + item.puntuacion, 0) / valid.length : 0;
+
+  const average = valid.length
+    ? valid.reduce((acc, item) => acc + item.puntuacion, 0) / valid.length
+    : 0;
+
   const latestComments = reviews
     .filter((item) => item.comentario)
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
     .slice(0, 3)
-    .map((item) => item.comentario);
+    .map((item) => ({
+      id: item.idpuntuacion,
+      text: item.comentario,
+      userId: item.usuario?.idusuario ?? item.usuario?.IDusuario ?? item.idusuario ?? item.IDusuario ?? null,
+      userName: item.usuario?.nombre || null,
+      date: item.fecha,
+    }));
 
   return {
     id: baseStation.idgasolinera,
@@ -34,33 +61,53 @@ function formatStation(baseStation, reviews = []) {
     estimatedPerformance: valid.length
       ? `${(13 + average / 2).toFixed(1)} km/L promedio reportado`
       : "Sin evaluaciones todavía",
-    location: [toNumber(baseStation.latitud), toNumber(baseStation.longitud)].every((value) => value != null)
-      ? `${toNumber(baseStation.latitud)}, ${toNumber(baseStation.longitud)}`
-      : "Ubicación pendiente",
+    location:
+      [toNumber(baseStation.latitud), toNumber(baseStation.longitud)].every(
+        (value) => value != null
+      )
+        ? `${toNumber(baseStation.latitud)}, ${toNumber(baseStation.longitud)}`
+        : "Ubicación pendiente",
   };
 }
 
-export async function listStations() {
+export async function listStations(filters = {}) {
   const stations = await prisma.gasolinera.findMany({
     include: {
       estado: true,
       municipio: true,
       puntuaciones: {
         where: { estatus: 1 },
-        select: {
-          puntuacion: true,
-          comentario: true,
-          fecha: true,
+        include: {
+          usuario: {
+            select: {
+              idusuario: true,
+              nombre: true,
+            },
+          },
+          puntuacionVehiculos: {
+            include: {
+              vehiculo: {
+                select: {
+                  idtipo: true,
+                  idMarca: true,
+                  idmodelo: true,
+                },
+              },
+            },
+          },
         },
       },
     },
     orderBy: { nombre: "asc" },
   });
 
-  return stations.map((station) => formatStation(station, station.puntuaciones));
+  return stations.map((station) => {
+    const filteredReviews = filterReviewsByVehicle(station.puntuaciones, filters);
+    return formatStation(station, filteredReviews);
+  });
 }
 
-export async function getStationById(id) {
+export async function getStationById(id, filters = {}) {
   const station = await prisma.gasolinera.findUnique({
     where: { idgasolinera: Number(id) },
     include: {
@@ -68,15 +115,31 @@ export async function getStationById(id) {
       municipio: true,
       puntuaciones: {
         where: { estatus: 1 },
-        select: {
-          puntuacion: true,
-          comentario: true,
-          fecha: true,
+        include: {
+          usuario: {
+            select: {
+              idusuario: true,
+              nombre: true,
+            },
+          },
+          puntuacionVehiculos: {
+            include: {
+              vehiculo: {
+                select: {
+                  idtipo: true,
+                  idMarca: true,
+                  idmodelo: true,
+                },
+              },
+            },
+          },
         },
       },
     },
   });
 
   if (!station) return null;
-  return formatStation(station, station.puntuaciones);
+
+  const filteredReviews = filterReviewsByVehicle(station.puntuaciones, filters);
+  return formatStation(station, filteredReviews);
 }

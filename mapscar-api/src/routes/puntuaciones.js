@@ -107,15 +107,28 @@ r.post('/', requireAuth, async (req, res) => {
   }
 });
 
-r.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+r.delete('/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const exist = await prisma.puntuacion.findUnique({ where: { idpuntuacion: id } });
+    const exist = await prisma.puntuacion.findUnique({
+      where: { idpuntuacion: id },
+    });
+
     if (!exist) return fail(res, 'Puntuación no encontrada', 404);
 
-    await prisma.puntuacionVehiculo.deleteMany({ where: { idpuntuacion: id } });
-    await prisma.puntuacion.delete({ where: { idpuntuacion: id } });
-    return ok(res, { message: 'Puntuación eliminada correctamente' });
+    const isAdmin = Number(req.user?.IDrol) === 1;
+    const isOwner = String(exist.idusuario) === String(req.user?.IDusuario);
+
+    if (!isAdmin && !isOwner) {
+      return fail(res, 'No tienes permiso para eliminar este comentario', 403);
+    }
+
+    await prisma.puntuacion.update({
+      where: { idpuntuacion: id },
+      data: { estatus: 0 },
+    });
+
+    return ok(res, { message: 'Comentario eliminado correctamente' });
   } catch (error) {
     return fail(res, error, 500);
   }

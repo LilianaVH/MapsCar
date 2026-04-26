@@ -9,6 +9,14 @@ export const brands = ['Toyota', 'Honda', 'Nissan', 'Mazda', 'Ford', 'Chevrolet'
 export const years = Array.from({ length: 30 }, (_, i) => String(2026 - i));
 export const colors = ['Blanco', 'Negro', 'Gris', 'Rojo', 'Azul', 'Plata', 'Verde'];
 
+export type StationComment = {
+  id: number;
+  text: string;
+  userId: string;
+  userName?: string | null;
+  date?: string | Date | null;
+};
+
 export type GasStation = {
   id: number;
   idgasolinera: number;
@@ -19,7 +27,7 @@ export type GasStation = {
   location: string;
   rating: number;
   reviewCount: number;
-  comments: string[];
+  comments: StationComment[];
   estimatedPerformance: string;
   image: string | null;
   lat: number | null;
